@@ -1,0 +1,57 @@
+# Standard imports
+
+from unittest.mock          import MagicMock
+from uuid                   import uuid
+
+# Specific imports
+
+from pytest                 import fixture
+from pytest_bdd             import given, when, then, scenarios
+
+# Local imports
+
+from lib.models             import ClientNetworkFootprint
+from lib.client_networks    import footprint
+
+scenarios("model_client_networks.feature")
+
+CLIENT_ID =     uuid("0be669b6-6a9f-4a9d-8cd8-f08a081da148")
+SHRD_CLIENT_ID1 =uuid("d44241aa-79bf-4265-b79a-4022250f9662")
+SHRD_CLIENT_ID2 =uuid("be497ea2-50e9-433c-8c2d-1fd628ab4ba8")
+
+# Notes
+# 1. The original code used uuid4(), making assertion harder using fixed UUID makes easier to debug failures.
+# 2. Using target_fixture cleaner for pytest-bdd framework.
+# 3. The original test perfomed the action inside the THEN step, its better with BDD structure GIVEN: test data,
+#   WHEN: the footprint is resolved, THEN: assert the result.
+# 4. Simplifying the mock cursor, much easier to read manually instead of creating several nested objects.
+# 5. Improved the test checks by strengthening the asserts to build more trust on the results.
+# 6. Removed unused imports
+# 7. Updated the feature file with additional GIVEN statement.
+
+@given("a network is shared with another client", target_fixture="shared_client_network_rows")
+def shared_client_network_rows():
+    return [(5, SHRD_CLIENT_ID1), (6, SHRD_CLIENT_ID2)]
+
+@given ("A client with networks", target_fixture="client_with_networks")
+def client_with_networks():
+    return ClientNetworkFootprint(client_id=CLIENT_ID, networks = [(1, "90.0.1.0/24"), (2, "190.0.1.0/24")])
+
+@given("A database cursor for the shared network lookuo", target_fixture="mock_cursor")
+def mock_cursor(shared_client_network_rows):
+    cursor = MagicMock()
+    cursor.execute.return_value.fetchall.side_effect = [shared_client_network_rows, [(1, "90.0.1.0/24")], []]
+    return cursor
+
+@when("the client network footprint is resolved", target_fixture="resolved_footprint"):
+def resolved_footprint(client_with_networks, mock_cursor):
+    return footprint(client_with_networks_mock_cursor)
+
+@then("this relation is modeled in the parent ClientNetworkFootprint")
+def shared_network_relation_is_modelled_in_parent_fiitprint(resolved_foorprint, mock_cursor):
+    resolved_client_footprint = resolved_footprint.client_network_footprint
+
+    assert resolved_client_footprint, ClientNetworkFootprint
+    assert resolved_client_footprint.client_id == CLIENT_ID
+    assert resolved_client_footprint.networks == [(1, "90.0.1.0/24")]
+    assert mock_cursor.execute.call_count==3
